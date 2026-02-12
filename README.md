@@ -1,134 +1,155 @@
-# DNS Tunnel Resolver Scanner (dnst-scanner)
+# dnst-scanner
 
-A tool to scan and identify recursive DNS resolvers compatible with DNS tunneling. Provides end-to-end validation for finding resolver IPs that can establish DNS tunnels like Slipstream and DNSTT.
+A CLI tool to scan and evaluate DNS resolvers for tunneling viability. Supports basic liveness checks, censorship detection, NS delegation verification, and end-to-end tunnel connectivity tests through [DNSTT](https://www.bamsoftware.com/software/dnstt/) and [Slipstream](https://github.com/Mygod/slipstream-rust).
 
-## Features
-
-- Fetch raw resolver IP list from [ir-resolvers](https://github.com/net2share/ir-resolvers)
-- Two-step scanning process:
-  1. **Basic scan**: Ping check, multi-domain DNS testing, resolver classification
-  2. **E2E validation** (optional): Test with actual Slipstream/DNSTT tunnel connections
-- Multi-domain testing to identify resolver behavior:
-  - Normal domains (google.com, microsoft.com)
-  - Blocked domains (facebook.com, x.com) to detect censorship/hijacking
-  - Custom tunnel domain to verify reachability
-- Classification: `clean` (resolves blocked domains) vs `censored` (hijacks to 10.x.x.x)
-- Concurrent scanning with configurable parallelism
-- Output in JSON or plain text formats
-- Standalone CLI tool, orchestrated by [dnstc](https://github.com/net2share/dnstc)
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           dnst-scanner                                      │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                        Step 1: Basic Scan                           │    │
-│  │                                                                     │    │
-│  │   ir-resolvers ──► Raw IPs ──► Ping ──► DNS Tests ──► Classified   │    │
-│  │   (GitHub)                      Check    (multi-domain)  Resolvers │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                    │                                        │
-│                                    ▼                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                 Step 2: E2E Validation (Optional)                   │    │
-│  │                                                                     │    │
-│  │   Classified  ──► Slipstream/DNSTT ──► Health Check ──► Verified   │    │
-│  │   Resolvers       Client Test           Endpoint       Resolvers   │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-## Scanning Process
-
-### Step 1: Basic Scan
-
-1. **Ping check**: Verify basic connectivity
-2. **Normal domain queries**: Test google.com and microsoft.com (baseline)
-3. **Blocked domain query**: Test facebook.com/x.com to detect hijacking
-4. **Tunnel domain query**: Test custom NS subdomain reachability
-
-**Output**: Classified resolvers with response times and behavior data
-
-### Step 2: E2E Validation (Optional)
-
-Tests resolvers with actual tunnel connections:
-- Requires Slipstream/DNSTT client binaries
-- Connects through each resolver to health check endpoint
-- Verifies complete tunnel path works
-
-**Output**: Resolvers marked with E2E success/failure per protocol
-
-## Usage
+## Build
 
 ```bash
-# Basic scan only (default)
-dnst-scanner scan --tunnel-domain t.example.com
-
-# Basic scan + E2E validation
-dnst-scanner scan --tunnel-domain t.example.com --e2e \
-  --slipstream-health hc-s.example.com \
-  --slipstream-fingerprint abc123 \
-  --dnstt-health hc-d.example.com \
-  --dnstt-pubkey xyz789
-
-# Custom resolver list
-dnst-scanner scan --input custom-ips.txt --tunnel-domain t.example.com
-
-# JSON output to file
-dnst-scanner scan --tunnel-domain t.example.com --format json --output results.json
+go build -o scanner ./cmd
 ```
 
-## Configuration
+## Commands
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--input` | Custom resolver IP list file | Fetch from ir-resolvers |
-| `--tunnel-domain` | NS subdomain to test tunnel reachability | Required |
-| `--e2e` | Enable E2E validation with actual tunnels | false |
-| `--slipstream-health` | Slipstream health check domain (for E2E) | - |
-| `--slipstream-fingerprint` | Slipstream TLS fingerprint (for E2E) | - |
-| `--dnstt-health` | DNSTT health check domain (for E2E) | - |
-| `--dnstt-pubkey` | DNSTT public key (for E2E) | - |
-| `--workers` | Number of concurrent workers | 50 |
-| `--timeout` | Timeout per resolver | 3s |
-| `--output` | Output file path | stdout |
-| `--format` | Output format: `plain` or `json` | `json` |
+### ping
 
-### Environment Variable Overrides
-
-| Variable | Description |
-|----------|-------------|
-| `DNST_SCANNER_RESOLVERS_URL` | Override default ir-resolvers URL |
-| `DNST_SCANNER_RESOLVERS_PATH` | Use local file (skips download) |
-| `DNST_SCANNER_SLIPSTREAM_PATH` | Path to slipstream-client binary |
-| `DNST_SCANNER_DNSTT_PATH` | Path to dnstt-client binary |
-
-## Integration with dnstc
-
-dnstc orchestrates dnst-scanner as a subprocess:
-- dnstc runs dnst-scanner with appropriate flags
-- Scanner outputs JSON to stdout
-- dnstc parses results and updates resolver pool
-- Scheduled periodic runs keep resolver list fresh
+Check IP reachability via ICMP ping. Sends `--count` pings with `--timeout` seconds wait each, reports average RTT.
 
 ```bash
-# Example: dnstc runs scanner and captures JSON output
-dnst-scanner scan --tunnel-domain t.example.com --format json
+./scanner ping -i resolvers.txt -o result.json
+./scanner ping -i resolvers.txt -o result.json -c 5 -t 2
 ```
 
-## Requirements
+### resolve
 
-- Windows, macOS, or Linux
-- Network access to target resolvers
-- Server with health check endpoints configured (for E2E validation)
-- Slipstream/DNSTT client binaries (for E2E validation)
+Test if resolvers can resolve a given domain. Queries `--count` times and reports average resolve time.
+
+```bash
+./scanner resolve -i resolvers.txt -o result.json --domain google.com
+```
+
+### resolve tunnel
+
+Test NS delegation and glue record resolution for a tunnel domain. For each attempt it queries the NS record, then resolves the returned NS hostname via an A query to verify the full DNS chain. Runs `--count` times and reports the average.
+
+```bash
+./scanner resolve tunnel -i resolvers.txt -o result.json --domain t.example.com
+```
+
+### e2e dnstt
+
+End-to-end connectivity test through a DNSTT SOCKS tunnel. Requires `dnstt-client` and `curl` in PATH.
+
+```bash
+./scanner e2e dnstt -i resolvers.txt -o result.json \
+  --domain q.example.com --pubkey <hex-pubkey>
+```
+
+### e2e slipstream
+
+End-to-end connectivity test through a Slipstream SOCKS tunnel. Requires `slipstream-client` and `curl` in PATH.
+
+```bash
+./scanner e2e slipstream -i resolvers.txt -o result.json \
+  --domain s.example.com --cert /path/to/cert.pem
+```
+
+### chain
+
+Run multiple scan steps in sequence, passing results in-memory. Only IPs that pass a step are forwarded to the next one.
+
+```bash
+./scanner chain -i resolvers.txt -o result.json \
+  --step "ping" \
+  --step "resolve:domain=google.com" \
+  --step "resolve/tunnel:domain=q.example.com" \
+  --step "e2e/dnstt:domain=q.example.com,pubkey=<hex-pubkey>" \
+  --step "e2e/slipstream:domain=q.example.com,cert=/path/to/cert.pem"
+```
+
+Step format is `type:key=val,key=val`.
+
+| Step               | Required params    | Optional params (defaults)                                              |
+| ------------------ | ------------------ | ----------------------------------------------------------------------- |
+| `ping`             | —                  | `count` (3), `timeout` (3)                                              |
+| `resolve`          | `domain`           | `count` (3), `timeout` (3)                                              |
+| `resolve/tunnel`   | `domain`           | `count` (3), `timeout` (3)                                              |
+| `e2e/dnstt`        | `domain`, `pubkey` | `test-url` (https://httpbin.org/ip), `timeout` (5)                      |
+| `e2e/slipstream`   | `domain`           | `cert`, `test-url` (https://httpbin.org/ip), `timeout` (5)              |
+
+## Global Flags
+
+| Flag               | Short | Description                              | Default  |
+| ------------------ | ----- | ---------------------------------------- | -------- |
+| `--input`          | `-i`  | Input file (text or JSON)                | required |
+| `--output`         | `-o`  | Output JSON file                         | required |
+| `--timeout`        | `-t`  | Timeout per attempt (seconds)            | 3        |
+| `--count`          | `-c`  | Attempts per IP for ping/resolve checks  | 3        |
+| `--workers`        |       | Concurrent workers                       | 50       |
+| `--include-failed` |       | Also scan failed IPs from JSON input     | false    |
+
+## Metrics and Sorting
+
+Each check captures timing metrics. Results are sorted ascending by the step's primary metric (lower = better).
+
+| Step             | Metric       | Description                            |
+| ---------------- | ------------ | -------------------------------------- |
+| `ping`           | `ping_ms`    | Average RTT across successful pings    |
+| `resolve`        | `resolve_ms` | Average resolve time across attempts   |
+| `resolve/tunnel` | `resolve_ms` | Average NS + glue A query time across attempts |
+| `e2e/dnstt`      | `e2e_ms`     | Time from start to successful curl     |
+| `e2e/slipstream` | `e2e_ms`     | Time from start to successful curl     |
+
+For ping/resolve checks, an IP is marked as failed if 3 consecutive attempts fail (early exit). Otherwise, the metric is the average of successful attempts.
+
+## Input / Output
+
+**Input** can be a plain text file (one IP per line) or a JSON file from a previous scan. When using JSON input, only `passed` IPs are scanned by default — use `--include-failed` to scan all.
+
+**Output** is always JSON with structured records including per-IP metrics:
+
+```json
+{
+  "passed": [
+    {"ip": "1.1.1.1", "metrics": {"ping_ms": 4.2}},
+    {"ip": "8.8.8.8", "metrics": {"ping_ms": 12.7}}
+  ],
+  "failed": [
+    {"ip": "9.9.9.9"}
+  ]
+}
+```
+
+The `chain` command adds a `steps` array with per-step metadata, and passed records accumulate metrics from all steps:
+
+```json
+{
+  "steps": [
+    {
+      "name": "ping",
+      "tested": 10000,
+      "passed": 9200,
+      "failed": 800,
+      "duration_secs": 15.1
+    },
+    {
+      "name": "resolve",
+      "tested": 9200,
+      "passed": 8500,
+      "failed": 700,
+      "duration_secs": 42.3
+    }
+  ],
+  "passed": [
+    {"ip": "1.1.1.1", "metrics": {"ping_ms": 4.2, "resolve_ms": 15.3}}
+  ],
+  "failed": [
+    {"ip": "9.9.9.9"}
+  ]
+}
+```
 
 ## Related Projects
 
-- [dnstc](https://github.com/net2share/dnstc) - DNS tunnel client (orchestrates this scanner)
-- [dnstm](https://github.com/net2share/dnstm) - DNS tunnel server (hosts health check endpoints)
-- [ir-resolvers](https://github.com/net2share/ir-resolvers) - Raw resolver IP list
-- [go-corelib](https://github.com/net2share/go-corelib) - Shared Go library
+- [dnstc](https://github.com/net2share/dnstc) — DNS tunnel client
+- [dnstm](https://github.com/net2share/dnstm) — DNS tunnel server
+- [ir-resolvers](https://github.com/net2share/ir-resolvers) — Raw resolver IP list

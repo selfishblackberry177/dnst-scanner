@@ -1,0 +1,23 @@
+# Binary
+/scanner
+
+
+# Test artifacts
+*.json
+*.txt
+!go.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# AI agents
+CLAUDE.md
+claude.md
