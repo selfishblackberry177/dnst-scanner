@@ -50,7 +50,7 @@ func parseStepFlag(raw string) (stepConfig, error) {
 	return stepConfig{name: name, params: params}, nil
 }
 
-func buildStep(cfg stepConfig, defaultTimeout, defaultCount int, ports chan int) (scanner.Step, error) {
+func buildStep(cfg stepConfig, defaultTimeout, defaultCount int, ports chan int, ignoreRcodes []int) (scanner.Step, error) {
 	stepTimeout := defaultTimeout
 	if v, ok := cfg.params["timeout"]; ok {
 		t, err := strconv.Atoi(v)
@@ -79,14 +79,14 @@ func buildStep(cfg stepConfig, defaultTimeout, defaultCount int, ports chan int)
 		if !ok || domain == "" {
 			return scanner.Step{}, fmt.Errorf("step %q: missing required param 'domain'", cfg.name)
 		}
-		return scanner.Step{Name: "resolve", Timeout: dur, Check: scanner.ResolveCheck(domain, stepCount), SortBy: "resolve_ms"}, nil
+		return scanner.Step{Name: "resolve", Timeout: dur, Check: scanner.ResolveCheck(domain, stepCount, ignoreRcodes), SortBy: "resolve_ms"}, nil
 
 	case "resolve/tunnel":
 		domain, ok := cfg.params["domain"]
 		if !ok || domain == "" {
 			return scanner.Step{}, fmt.Errorf("step %q: missing required param 'domain'", cfg.name)
 		}
-		return scanner.Step{Name: "resolve/tunnel", Timeout: dur, Check: scanner.TunnelCheck(domain, stepCount), SortBy: "resolve_ms"}, nil
+		return scanner.Step{Name: "resolve/tunnel", Timeout: dur, Check: scanner.TunnelCheck(domain, stepCount, ignoreRcodes), SortBy: "resolve_ms"}, nil
 
 	case "e2e/dnstt":
 		domain, ok := cfg.params["domain"]
@@ -124,6 +124,11 @@ func runChain(cmd *cobra.Command, args []string) error {
 	stepFlags, _ := cmd.Flags().GetStringArray("step")
 	portBase, _ := cmd.Flags().GetInt("port-base")
 
+	ignoreRcodes, err := parseIgnoreRcodes()
+	if err != nil {
+		return err
+	}
+
 	// Parse all steps first (fail-fast)
 	configs := make([]stepConfig, 0, len(stepFlags))
 	for _, raw := range stepFlags {
@@ -140,7 +145,7 @@ func runChain(cmd *cobra.Command, args []string) error {
 	// Build all steps
 	steps := make([]scanner.Step, 0, len(configs))
 	for _, cfg := range configs {
-		s, err := buildStep(cfg, timeout, count, ports)
+		s, err := buildStep(cfg, timeout, count, ports, ignoreRcodes)
 		if err != nil {
 			return err
 		}

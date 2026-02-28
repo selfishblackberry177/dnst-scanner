@@ -2,7 +2,9 @@ package scanner
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/miekg/dns"
@@ -33,7 +35,24 @@ func isBogusIP(ip net.IP) bool {
 	return false
 }
 
-func query(resolver, domain string, qtype uint16, timeout time.Duration) (*dns.Msg, bool) {
+// ParseRcode converts a human-readable rcode name to its integer value.
+// Supported names: nxdomain, servfail, refused, formerr.
+func ParseRcode(name string) (int, error) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "nxdomain":
+		return dns.RcodeNameError, nil
+	case "servfail":
+		return dns.RcodeServerFailure, nil
+	case "refused":
+		return dns.RcodeRefused, nil
+	case "formerr":
+		return dns.RcodeFormatError, nil
+	default:
+		return 0, fmt.Errorf("unknown rcode %q (supported: nxdomain, servfail, refused, formerr)", name)
+	}
+}
+
+func query(resolver, domain string, qtype uint16, timeout time.Duration, ignoreRcodes []int) (*dns.Msg, bool) {
 	m := new(dns.Msg)
 	m.SetQuestion(dns.Fqdn(domain), qtype)
 	m.RecursionDesired = true
@@ -41,6 +60,7 @@ func query(resolver, domain string, qtype uint16, timeout time.Duration) (*dns.M
 	c := new(dns.Client)
 	c.Net = "udp"
 	c.Timeout = timeout
+	c.IgnoreRcodes = ignoreRcodes
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -52,8 +72,8 @@ func query(resolver, domain string, qtype uint16, timeout time.Duration) (*dns.M
 	return r, true
 }
 
-func QueryA(resolver, domain string, timeout time.Duration) bool {
-	r, ok := query(resolver, domain, dns.TypeA, timeout)
+func QueryA(resolver, domain string, timeout time.Duration, ignoreRcodes []int) bool {
+	r, ok := query(resolver, domain, dns.TypeA, timeout, ignoreRcodes)
 	if !ok {
 		return false
 	}
@@ -70,8 +90,8 @@ func QueryA(resolver, domain string, timeout time.Duration) bool {
 	return true
 }
 
-func QueryNS(resolver, domain string, timeout time.Duration) ([]string, bool) {
-	r, ok := query(resolver, domain, dns.TypeNS, timeout)
+func QueryNS(resolver, domain string, timeout time.Duration, ignoreRcodes []int) ([]string, bool) {
+	r, ok := query(resolver, domain, dns.TypeNS, timeout, ignoreRcodes)
 	if !ok {
 		return nil, false
 	}

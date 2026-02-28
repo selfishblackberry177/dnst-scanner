@@ -50,14 +50,14 @@ func PingCheck(count int) CheckFunc {
 	}
 }
 
-func ResolveCheck(domain string, count int) CheckFunc {
+func ResolveCheck(domain string, count int, ignoreRcodes []int) CheckFunc {
 	return func(ip string, timeout time.Duration) (bool, Metrics) {
 		var successes []float64
 		var consecFail int
 
 		for i := 0; i < count; i++ {
 			start := time.Now()
-			if QueryA(ip, domain, timeout) {
+			if QueryA(ip, domain, timeout, ignoreRcodes) {
 				ms := float64(time.Since(start).Microseconds()) / 1000.0
 				successes = append(successes, ms)
 				consecFail = 0
@@ -81,7 +81,7 @@ func ResolveCheck(domain string, count int) CheckFunc {
 	}
 }
 
-func TunnelCheck(domain string, count int) CheckFunc {
+func TunnelCheck(domain string, count int, ignoreRcodes []int) CheckFunc {
 	return func(ip string, timeout time.Duration) (bool, Metrics) {
 		var successes []float64
 		var consecFail int
@@ -90,7 +90,7 @@ func TunnelCheck(domain string, count int) CheckFunc {
 			start := time.Now()
 
 			// Step 1: Query NS for the tunnel domain
-			hosts, ok := QueryNS(ip, domain, timeout)
+			hosts, ok := QueryNS(ip, domain, timeout, ignoreRcodes)
 			if !ok || len(hosts) == 0 {
 				consecFail++
 				if consecFail >= maxConsecFail {
@@ -101,7 +101,7 @@ func TunnelCheck(domain string, count int) CheckFunc {
 
 			// Step 2: Resolve the first NS hostname to verify glue record
 			nsHost := strings.TrimRight(hosts[0], ".")
-			if !QueryA(ip, nsHost, timeout) {
+			if !QueryA(ip, nsHost, timeout, ignoreRcodes) {
 				consecFail++
 				if consecFail >= maxConsecFail {
 					return false, nil

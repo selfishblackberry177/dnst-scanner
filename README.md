@@ -86,6 +86,29 @@ Step format is `type:key=val,key=val`.
 | `--count`          | `-c`  | Attempts per IP for ping/resolve checks  | 3        |
 | `--workers`        |       | Concurrent workers                       | 50       |
 | `--include-failed` |       | Also scan failed IPs from JSON input     | false    |
+| `--ignore-rcode`   |       | DNS rcodes to ignore (see below)         | —        |
+
+## Ignoring DNS Response Codes
+
+Use `--ignore-rcode` to skip DNS responses with specific rcodes. This is useful when network middleboxes inject fake responses (e.g. NXDOMAIN) to censor domains — the scanner will discard those and wait for a legitimate reply.
+
+Supported values: `nxdomain`, `servfail`, `refused`, `formerr`.
+
+```bash
+# Ignore injected NXDOMAIN responses
+./scanner resolve -i resolvers.txt -o result.json --domain example.com --ignore-rcode nxdomain
+
+# Ignore multiple rcodes
+./scanner resolve -i resolvers.txt -o result.json --domain example.com --ignore-rcode nxdomain --ignore-rcode servfail
+
+# Works with tunnel and chain commands too
+./scanner resolve tunnel -i resolvers.txt -o result.json --domain t.example.com --ignore-rcode nxdomain
+./scanner chain -i resolvers.txt -o result.json --ignore-rcode nxdomain \
+  --step "resolve:domain=example.com" \
+  --step "resolve/tunnel:domain=t.example.com"
+```
+
+Applies to `resolve`, `resolve tunnel`, and the corresponding `chain` steps. Does not apply to `ping` or `e2e` commands (which don't perform direct DNS queries).
 
 ## Metrics and Sorting
 
