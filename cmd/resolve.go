@@ -27,8 +27,13 @@ func runResolve(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	ignoreRcodes, err := parseIgnoreRcodes()
+	if err != nil {
+		return err
+	}
+
 	dur := time.Duration(timeout) * time.Second
-	check := scanner.ResolveCheck(domain, count)
+	check := scanner.ResolveCheck(domain, count, ignoreRcodes)
 
 	start := time.Now()
 	results := scanner.RunPool(ips, workers, dur, check, newProgress("resolve"))

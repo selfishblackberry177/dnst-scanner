@@ -10,12 +10,13 @@ import (
 )
 
 var (
-	inputFile     string
-	outputFile    string
-	includeFailed bool
-	workers       int
-	timeout       int
-	count         int
+	inputFile        string
+	outputFile       string
+	includeFailed    bool
+	workers          int
+	timeout          int
+	count            int
+	ignoreRcodeNames []string
 )
 
 var rootCmd = &cobra.Command{
@@ -31,6 +32,7 @@ func init() {
 	rootCmd.PersistentFlags().IntVar(&workers, "workers", 50, "concurrent workers")
 	rootCmd.PersistentFlags().IntVarP(&timeout, "timeout", "t", 3, "timeout per attempt in seconds")
 	rootCmd.PersistentFlags().IntVarP(&count, "count", "c", 3, "number of attempts per IP for ping/resolve checks")
+	rootCmd.PersistentFlags().StringSliceVar(&ignoreRcodeNames, "ignore-rcode", nil, "DNS rcodes to ignore, e.g. nxdomain, servfail, refused, formerr (repeatable)")
 	rootCmd.MarkPersistentFlagRequired("input")
 	rootCmd.MarkPersistentFlagRequired("output")
 	rootCmd.SilenceUsage = true
@@ -40,6 +42,21 @@ func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+func parseIgnoreRcodes() ([]int, error) {
+	if len(ignoreRcodeNames) == 0 {
+		return nil, nil
+	}
+	codes := make([]int, 0, len(ignoreRcodeNames))
+	for _, name := range ignoreRcodeNames {
+		code, err := scanner.ParseRcode(name)
+		if err != nil {
+			return nil, err
+		}
+		codes = append(codes, code)
+	}
+	return codes, nil
 }
 
 func loadInput() ([]string, error) {
