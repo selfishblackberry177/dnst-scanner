@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -75,8 +76,11 @@ func SlipstreamCheck(domain, certPath, testURL string, ports chan int) CheckFunc
 			args = append(args, "--cert", certPath)
 		}
 		cmd := exec.CommandContext(ctx, "slipstream-client", args...)
-		cmd.Stdout = io.Discard
 		cmd.Stderr = io.Discard
+		stdoutPipe, err := cmd.StdoutPipe()
+		if err != nil {
+			return false, nil
+		}
 		if err := cmd.Start(); err != nil {
 			return false, nil
 		}
@@ -85,8 +89,21 @@ func SlipstreamCheck(domain, certPath, testURL string, ports chan int) CheckFunc
 			cmd.Wait()
 		}()
 
+		ready := make(chan struct{})
+		go func() {
+			sc := bufio.NewScanner(stdoutPipe)
+			for sc.Scan() {
+				if strings.Contains(sc.Text(), "Connection ready") {
+					close(ready)
+					break
+				}
+			}
+			// Keep draining stdout so slipstream-client doesn't get SIGPIPE
+			io.Copy(io.Discard, stdoutPipe)
+		}()
+
 		select {
-		case <-time.After(2 * time.Second):
+		case <-ready:
 		case <-ctx.Done():
 			return false, nil
 		}

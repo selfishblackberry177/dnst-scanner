@@ -52,6 +52,9 @@ func parseStepFlag(raw string) (stepConfig, error) {
 
 func buildStep(cfg stepConfig, defaultTimeout, defaultCount int, ports chan int, ignoreRcodes []int) (scanner.Step, error) {
 	stepTimeout := defaultTimeout
+	if strings.HasPrefix(cfg.name, "e2e/") {
+		stepTimeout = e2eTimeout
+	}
 	if v, ok := cfg.params["timeout"]; ok {
 		t, err := strconv.Atoi(v)
 		if err != nil {
