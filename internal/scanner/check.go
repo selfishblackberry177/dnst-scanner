@@ -83,35 +83,29 @@ func ResolveCheck(domain string, count int, ignoreRcodes []int) CheckFunc {
 
 func TunnelCheck(domain string, count int, ignoreRcodes []int) CheckFunc {
 	return func(ip string, timeout time.Duration) (bool, Metrics) {
+		// Step 1: Discover NS delegation from parent authoritative server (once)
+		hosts, ok := DiscoverNS(ip, domain, timeout, ignoreRcodes)
+		if !ok || len(hosts) == 0 {
+			return false, nil
+		}
+		nsHost := strings.TrimRight(hosts[0], ".")
+
+		// Step 2: Verify resolver can resolve the NS hostname (repeated)
 		var successes []float64
 		var consecFail int
 
 		for i := 0; i < count; i++ {
 			start := time.Now()
-
-			// Step 1: Query NS for the tunnel domain
-			hosts, ok := QueryNS(ip, domain, timeout, ignoreRcodes)
-			if !ok || len(hosts) == 0 {
+			if QueryA(ip, nsHost, timeout, ignoreRcodes) {
+				ms := float64(time.Since(start).Microseconds()) / 1000.0
+				successes = append(successes, ms)
+				consecFail = 0
+			} else {
 				consecFail++
 				if consecFail >= maxConsecFail {
 					return false, nil
 				}
-				continue
 			}
-
-			// Step 2: Resolve the first NS hostname to verify glue record
-			nsHost := strings.TrimRight(hosts[0], ".")
-			if !QueryA(ip, nsHost, timeout, ignoreRcodes) {
-				consecFail++
-				if consecFail >= maxConsecFail {
-					return false, nil
-				}
-				continue
-			}
-
-			ms := float64(time.Since(start).Microseconds()) / 1000.0
-			successes = append(successes, ms)
-			consecFail = 0
 		}
 
 		if len(successes) == 0 {

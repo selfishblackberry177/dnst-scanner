@@ -106,3 +106,81 @@ func QueryNS(resolver, domain string, timeout time.Duration, ignoreRcodes []int)
 	}
 	return hosts, true
 }
+
+func QueryAIP(resolver, domain string, timeout time.Duration, ignoreRcodes []int) (string, bool) {
+	r, ok := query(resolver, domain, dns.TypeA, timeout, ignoreRcodes)
+	if !ok {
+		return "", false
+	}
+	for _, ans := range r.Answer {
+		if a, ok := ans.(*dns.A); ok {
+			if !isBogusIP(a.A) {
+				return a.A.String(), true
+			}
+		}
+	}
+	return "", false
+}
+
+func parentDomain(domain string) string {
+	parts := strings.SplitN(domain, ".", 2)
+	if len(parts) < 2 || parts[1] == "" {
+		return ""
+	}
+	return parts[1]
+}
+
+func queryNSFromAuthority(authIP, domain string, timeout time.Duration) ([]string, bool) {
+	m := new(dns.Msg)
+	m.SetQuestion(dns.Fqdn(domain), dns.TypeNS)
+	m.RecursionDesired = false
+
+	c := new(dns.Client)
+	c.Net = "udp"
+	c.Timeout = timeout
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	r, _, err := c.ExchangeContext(ctx, m, authIP+":53")
+	if err != nil || r == nil {
+		return nil, false
+	}
+
+	var hosts []string
+	for _, rr := range r.Answer {
+		if ns, ok := rr.(*dns.NS); ok {
+			hosts = append(hosts, ns.Ns)
+		}
+	}
+	for _, rr := range r.Ns {
+		if ns, ok := rr.(*dns.NS); ok {
+			hosts = append(hosts, ns.Ns)
+		}
+	}
+
+	if len(hosts) == 0 {
+		return nil, false
+	}
+	return hosts, true
+}
+
+func DiscoverNS(resolver, tunnelDomain string, timeout time.Duration, ignoreRcodes []int) ([]string, bool) {
+	parent := parentDomain(tunnelDomain)
+	if parent == "" {
+		return nil, false
+	}
+
+	parentNSNames, ok := QueryNS(resolver, parent, timeout, ignoreRcodes)
+	if !ok {
+		return nil, false
+	}
+
+	nsHost := strings.TrimRight(parentNSNames[0], ".")
+	nsIP, ok := QueryAIP(resolver, nsHost, timeout, ignoreRcodes)
+	if !ok {
+		return nil, false
+	}
+
+	return queryNSFromAuthority(nsIP, tunnelDomain, timeout)
+}
