@@ -5,7 +5,7 @@ A CLI tool to scan and evaluate DNS resolvers for tunneling viability. Supports 
 ## Build
 
 ```bash
-go build -o scanner ./cmd
+go build -o dnst-scanner ./cmd
 ```
 
 ## Commands
@@ -15,8 +15,8 @@ go build -o scanner ./cmd
 Check IP reachability via ICMP ping. Sends `--count` pings with `--timeout` seconds wait each, reports average RTT.
 
 ```bash
-./scanner ping -i resolvers.txt -o result.json
-./scanner ping -i resolvers.txt -o result.json -c 5 -t 2
+./dnst-scanner ping -i resolvers.txt -o result.json
+./dnst-scanner ping -i resolvers.txt -o result.json -c 5 -t 2
 ```
 
 ### resolve
@@ -24,15 +24,15 @@ Check IP reachability via ICMP ping. Sends `--count` pings with `--timeout` seco
 Test if resolvers can resolve a given domain. Queries `--count` times and reports average resolve time.
 
 ```bash
-./scanner resolve -i resolvers.txt -o result.json --domain google.com
+./dnst-scanner resolve -i resolvers.txt -o result.json --domain google.com
 ```
 
 ### resolve tunnel
 
-Test NS delegation and glue record resolution for a tunnel domain. For each attempt it queries the NS record, then resolves the returned NS hostname via an A query to verify the full DNS chain. Runs `--count` times and reports the average.
+Test if resolvers can reach a tunnel domain's NS server. Sends an NS query for the tunnel domain through each resolver — any response (including NXDOMAIN) proves the resolver can route queries to the tunnel server. SERVFAIL or timeout means the resolver can't reach it. Requires the DNSTT server to be running on the target.
 
 ```bash
-./scanner resolve tunnel -i resolvers.txt -o result.json --domain t.example.com
+./dnst-scanner resolve tunnel -i resolvers.txt -o result.json --domain t.example.com
 ```
 
 ### e2e dnstt
@@ -40,8 +40,9 @@ Test NS delegation and glue record resolution for a tunnel domain. For each atte
 End-to-end connectivity test through a DNSTT SOCKS tunnel. Requires `dnstt-client` and `curl` in PATH.
 
 ```bash
-./scanner e2e dnstt -i resolvers.txt -o result.json \
-  --domain q.example.com --pubkey <hex-pubkey>
+./dnst-scanner e2e dnstt -i resolvers.txt -o result.json \
+  --domain q.example.com --pubkey <hex-pubkey> \
+  --socks-user <user> --socks-pass <pass>
 ```
 
 ### e2e slipstream
@@ -49,7 +50,7 @@ End-to-end connectivity test through a DNSTT SOCKS tunnel. Requires `dnstt-clien
 End-to-end connectivity test through a Slipstream SOCKS tunnel. Requires `slipstream-client` and `curl` in PATH.
 
 ```bash
-./scanner e2e slipstream -i resolvers.txt -o result.json \
+./dnst-scanner e2e slipstream -i resolvers.txt -o result.json \
   --domain s.example.com --cert /path/to/cert.pem
 ```
 
@@ -58,7 +59,7 @@ End-to-end connectivity test through a Slipstream SOCKS tunnel. Requires `slipst
 Run multiple scan steps in sequence, passing results in-memory. Only IPs that pass a step are forwarded to the next one.
 
 ```bash
-./scanner chain -i resolvers.txt -o result.json \
+./dnst-scanner chain -i resolvers.txt -o result.json \
   --step "ping" \
   --step "resolve:domain=google.com" \
   --step "resolve/tunnel:domain=q.example.com" \
@@ -73,7 +74,7 @@ Step format is `type:key=val,key=val`.
 | `ping`             | —                  | `count` (3), `timeout` (3)                                              |
 | `resolve`          | `domain`           | `count` (3), `timeout` (3)                                              |
 | `resolve/tunnel`   | `domain`           | `count` (3), `timeout` (3)                                              |
-| `e2e/dnstt`        | `domain`, `pubkey` | `test-url` (https://httpbin.org/ip), `timeout` (5)                      |
+| `e2e/dnstt`        | `domain`, `pubkey` | `socks-user`, `socks-pass`, `test-url` (https://httpbin.org/ip), `timeout` (5) |
 | `e2e/slipstream`   | `domain`           | `cert`, `test-url` (https://httpbin.org/ip), `timeout` (5)              |
 
 ## Global Flags
@@ -95,7 +96,7 @@ Each check captures timing metrics. Results are sorted ascending by the step's p
 | ---------------- | ------------ | -------------------------------------- |
 | `ping`           | `ping_ms`    | Average RTT across successful pings    |
 | `resolve`        | `resolve_ms` | Average resolve time across attempts   |
-| `resolve/tunnel` | `resolve_ms` | Average NS + glue A query time across attempts |
+| `resolve/tunnel` | `resolve_ms` | Average NS query round-trip time |
 | `e2e/dnstt`      | `e2e_ms`     | Time from start to successful curl     |
 | `e2e/slipstream` | `e2e_ms`     | Time from start to successful curl     |
 

@@ -50,3 +50,28 @@ func QueryNS(resolver, domain string, timeout time.Duration) ([]string, bool) {
 	}
 	return hosts, true
 }
+
+// QueryTunnel sends an NS query for the tunnel domain and returns true if the
+// query reached the tunnel server. DNSTT servers typically return NXDOMAIN or
+// NOERROR — both prove the resolver routed the query to the tunnel server.
+// SERVFAIL means the resolver couldn't reach the tunnel server (e.g., it's down),
+// and timeouts mean the resolver itself is unreachable or blocked.
+func QueryTunnel(resolver, domain string, timeout time.Duration) bool {
+	m := new(dns.Msg)
+	m.SetQuestion(dns.Fqdn(domain), dns.TypeNS)
+	m.RecursionDesired = true
+
+	c := new(dns.Client)
+	c.Net = "udp"
+	c.Timeout = timeout
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	r, _, err := c.ExchangeContext(ctx, m, resolver+":53")
+	if err != nil || r == nil {
+		return false
+	}
+	// SERVFAIL means the resolver couldn't reach the tunnel server
+	return r.Rcode != dns.RcodeServerFailure
+}

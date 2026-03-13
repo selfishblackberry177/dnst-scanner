@@ -17,7 +17,7 @@ func PortPool(base, count int) chan int {
 	return ch
 }
 
-func DnsttCheck(domain, pubkey, testURL string, ports chan int) CheckFunc {
+func DnsttCheck(domain, pubkey, socksUser, socksPass, testURL string, ports chan int) CheckFunc {
 	return func(ip string, timeout time.Duration) (bool, Metrics) {
 		port := <-ports
 		defer func() { ports <- port }()
@@ -48,7 +48,7 @@ func DnsttCheck(domain, pubkey, testURL string, ports chan int) CheckFunc {
 			return false, nil
 		}
 
-		if !testSOCKS(ctx, port, testURL) {
+		if !testSOCKS(ctx, port, socksUser, socksPass, testURL) {
 			return false, nil
 		}
 		ms := roundMs(float64(time.Since(start).Microseconds()) / 1000.0)
@@ -91,7 +91,7 @@ func SlipstreamCheck(domain, certPath, testURL string, ports chan int) CheckFunc
 			return false, nil
 		}
 
-		if !testSOCKS(ctx, port, testURL) {
+		if !testSOCKS(ctx, port, "", "", testURL) {
 			return false, nil
 		}
 		ms := roundMs(float64(time.Since(start).Microseconds()) / 1000.0)
@@ -99,9 +99,13 @@ func SlipstreamCheck(domain, certPath, testURL string, ports chan int) CheckFunc
 	}
 }
 
-func testSOCKS(ctx context.Context, port int, testURL string) bool {
+func testSOCKS(ctx context.Context, port int, user, pass, testURL string) bool {
+	proxy := fmt.Sprintf("socks5h://127.0.0.1:%d", port)
+	if user != "" {
+		proxy = fmt.Sprintf("socks5h://%s:%s@127.0.0.1:%d", user, pass, port)
+	}
 	cmd := exec.CommandContext(ctx, "curl",
-		"-x", fmt.Sprintf("socks5h://127.0.0.1:%d", port),
+		"-x", proxy,
 		"-s", "-o", "/dev/null", "-w", "%{http_code}",
 		testURL)
 	output, err := cmd.Output()

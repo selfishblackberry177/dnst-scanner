@@ -101,7 +101,9 @@ func buildStep(cfg stepConfig, defaultTimeout, defaultCount int, ports chan int)
 		if v, ok := cfg.params["test-url"]; ok {
 			testURL = v
 		}
-		return scanner.Step{Name: "e2e/dnstt", Timeout: dur, Check: scanner.DnsttCheck(domain, pubkey, testURL, ports), SortBy: "e2e_ms"}, nil
+		socksUser := cfg.params["socks-user"]
+		socksPass := cfg.params["socks-pass"]
+		return scanner.Step{Name: "e2e/dnstt", Timeout: dur, Check: scanner.DnsttCheck(domain, pubkey, socksUser, socksPass, testURL, ports), SortBy: "e2e_ms"}, nil
 
 	case "e2e/slipstream":
 		domain, ok := cfg.params["domain"]

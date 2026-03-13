@@ -9,12 +9,12 @@ import (
 
 var tunnelCmd = &cobra.Command{
 	Use:   "tunnel",
-	Short: "Test NS delegation and glue record resolution for tunnel domain",
+	Short: "Test if resolvers can reach a tunnel domain's NS server",
 	RunE:  runTunnel,
 }
 
 func init() {
-	tunnelCmd.Flags().String("domain", "", "tunnel domain to check NS for")
+	tunnelCmd.Flags().String("domain", "", "tunnel domain to test")
 	tunnelCmd.MarkFlagRequired("domain")
 	resolveCmd.AddCommand(tunnelCmd)
 }

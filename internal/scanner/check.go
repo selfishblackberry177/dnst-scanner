@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"regexp"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -81,6 +80,9 @@ func ResolveCheck(domain string, count int) CheckFunc {
 	}
 }
 
+// TunnelCheck tests whether each resolver can reach the tunnel server by sending
+// NS queries for the tunnel domain. Any response (including NXDOMAIN) proves the
+// resolver can route queries to the tunnel server. Only timeouts count as failure.
 func TunnelCheck(domain string, count int) CheckFunc {
 	return func(ip string, timeout time.Duration) (bool, Metrics) {
 		var successes []float64
@@ -89,19 +91,7 @@ func TunnelCheck(domain string, count int) CheckFunc {
 		for i := 0; i < count; i++ {
 			start := time.Now()
 
-			// Step 1: Query NS for the tunnel domain
-			hosts, ok := QueryNS(ip, domain, timeout)
-			if !ok || len(hosts) == 0 {
-				consecFail++
-				if consecFail >= maxConsecFail {
-					return false, nil
-				}
-				continue
-			}
-
-			// Step 2: Resolve the first NS hostname to verify glue record
-			nsHost := strings.TrimRight(hosts[0], ".")
-			if !QueryA(ip, nsHost, timeout) {
+			if !QueryTunnel(ip, domain, timeout) {
 				consecFail++
 				if consecFail >= maxConsecFail {
 					return false, nil
